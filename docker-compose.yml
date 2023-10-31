@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  ml-backend:
+    container_name: tree-yolov5
+    image: chrej/tree-yolov5:latest
+    build: .
+    environment:
+      - MODEL_DIR=/data/models
+      - WORKERS=2
+      - THREADS=4
+      - LOG_LEVEL=DEBUG
+      - ANY=PARAMETER
+    ports:
+      - "9090:9090"
