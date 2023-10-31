@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -10,12 +11,14 @@ from label_studio_ml.model import LabelStudioMLBase
 # Fail fast if these aren't set
 SPACES_DOMAIN = os.environ['SPACES_DOMAIN']
 SPACES_REGION = os.environ['SPACES_REGION']
-SPACES_BUCKET = os.environ['SPACES_BUCKET']
 SPACES_KEY = os.environ['SPACES_KEY']
 SPACES_SECRET = os.environ['SPACES_SECRET']
 MODEL = os.environ['MODEL']
 
 CONFIDENCE_THRESHOLD = os.getenv('CONFIDENCE_THRESHOLD', 0.0)
+
+# Matches the spaces filepath format given by Label Studio
+FILEPATH_REGEX = re.compile(r'^s3://([^/]+)/(.+)$')
 
 class TreeYolov5Model(LabelStudioMLBase):
     """
@@ -54,13 +57,13 @@ class TreeYolov5Model(LabelStudioMLBase):
         task = tasks[0]
 
         # Prepare to download the image
-        filename = task['data']['image']
-        print("filename", filename)
+        filepath = task['data']['image']
+        (bucket, filename) = FILEPATH_REGEX.match(filepath).groups()
         image = f'/tmp/{filename}'
 
         try:
             # Download the image and run the model on it
-            self.client.download_file(SPACES_BUCKET, filename, image)
+            self.client.download_file(bucket, filename, image)
             model_results = self.model(image)
 
             # Get image dimensions from the tensor; this is needed for the bounding box conversions below
