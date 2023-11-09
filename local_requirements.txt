@@ -1,0 +1,5 @@
+ultralytics==8.0.202
+gitpython==3.1.40
+requests==2.31.0
+python-dotenv==1.0.0
+progress==1.6

@@ -11,6 +11,7 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY _wsgi.py model.py *.pt ./
+ADD ${model_path} ./
+COPY _wsgi.py model.py ./
 
 CMD exec gunicorn --preload --bind :$PORT --workers $WORKERS --threads $THREADS --timeout 0 _wsgi:app

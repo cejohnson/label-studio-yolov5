@@ -8,17 +8,9 @@ import botocore
 import torch
 from label_studio_ml.model import LabelStudioMLBase
 
-# Fail fast if these aren't set
-SPACES_DOMAIN = os.environ['SPACES_DOMAIN']
-SPACES_REGION = os.environ['SPACES_REGION']
-SPACES_KEY = os.environ['SPACES_KEY']
-SPACES_SECRET = os.environ['SPACES_SECRET']
-MODEL = os.environ['MODEL']
-
-CONFIDENCE_THRESHOLD = os.getenv('CONFIDENCE_THRESHOLD', 0.0)
-
 # Matches the spaces filepath format given by Label Studio
-FILEPATH_REGEX = re.compile(r'^s3://([^/]+)/(.+)$')
+FILEPATH_REGEX = re.compile(r"^s3://([^/]+)/(.+)$")
+
 
 class TreeYolov5Model(LabelStudioMLBase):
     """
@@ -36,64 +28,97 @@ class TreeYolov5Model(LabelStudioMLBase):
         """
         super(TreeYolov5Model, self).__init__(project_id, **kwargs)
 
-        self.model = torch.hub.load('.', 'custom', MODEL, source='local')
-        
-        session = boto3.session.Session()
-        self.client = session.client('s3',
-                        config=botocore.config.Config(s3={'addressing_style': 'virtual'}), # Configures to use subdomain/virtual calling format.
-                        region_name=SPACES_REGION,
-                        endpoint_url=F'https://{SPACES_REGION}.{SPACES_DOMAIN}',
-                        aws_access_key_id=SPACES_KEY,
-                        aws_secret_access_key=SPACES_SECRET)
+        # Fail fast if these aren't set
+        domain = os.environ["SPACES_DOMAIN"]
+        region = os.environ["SPACES_REGION"]
+        key = os.environ["SPACES_KEY"]
+        secret = os.environ["SPACES_SECRET"]
+        model_path = os.environ["MODEL_PATH"]
 
-    def predict(self, tasks: List[Dict], context: Optional[Dict] = None, **kwargs) -> List[Dict]:
-        """ 
+        self.confidence_threshold = float(os.getenv("CONFIDENCE_THRESHOLD", 0.0))
+        yolov5_path = os.getenv("YOLOV5_PATH", ".")
+
+        self.model = torch.hub.load(yolov5_path, "custom", model_path, source="local")
+        self.model_name = Path(model_path).stem
+        self.bucket = os.getenv("SPACES_BUCKET")
+
+        session = boto3.session.Session()
+        self.client = session.client(
+            "s3",
+            config=botocore.config.Config(
+                s3={"addressing_style": "virtual"}
+            ),  # Configures to use subdomain/virtual calling format.
+            region_name=region,
+            endpoint_url=f"https://{region}.{domain}",
+            aws_access_key_id=key,
+            aws_secret_access_key=secret,
+        )
+
+    def predict(
+        self, tasks: List[Dict], context: Optional[Dict] = None, **kwargs
+    ) -> List[Dict]:
+        """
         Write your inference logic here
         :param tasks: [Label Studio tasks in JSON format](https://labelstud.io/guide/task_format.html)
         :param context: [Label Studio context in JSON format](https://labelstud.io/guide/ml.html#Passing-data-to-ML-backend)
         :return predictions: [Predictions array in JSON format](https://labelstud.io/guide/export.html#Raw-JSON-format-of-completed-tasks)
         """
-        assert len(tasks) == 1
-        task = tasks[0]
+        predictions = []
+        for task in tasks:
+            # Prepare to download the image
+            if task["storage_filename"]:
+                bucket = self.bucket
+                filename = task["storage_filename"]
+            else:
+                spaces_path = task["data"]["image"]
+                (bucket, filename) = FILEPATH_REGEX.match(spaces_path).groups()
+            image = f"/tmp/image"
 
-        # Prepare to download the image
-        filepath = task['data']['image']
-        (bucket, filename) = FILEPATH_REGEX.match(filepath).groups()
-        image = f'/tmp/{filename}'
+            try:
+                # Download the image and run the model on it
+                self.client.download_file(bucket, filename, image)
+                model_results = self.model(image)
 
-        try:
-            # Download the image and run the model on it
-            self.client.download_file(bucket, filename, image)
-            model_results = self.model(image)
+                # Get image dimensions from the tensor; this is needed for the bounding box conversions below
+                height = model_results.ims[0].shape[0]
+                width = model_results.ims[0].shape[1]
 
-            # Get image dimensions from the tensor; this is needed for the bounding box conversions below
-            height = model_results.ims[0].shape[0]
-            width = model_results.ims[0].shape[1]
+                # Iterate through the results returned by the model and format each one for Label Studio
+                results = []
+                for result in model_results.pandas().xyxy[0].to_dict(orient="records"):
+                    if result["confidence"] > self.confidence_threshold:
+                        results.append(
+                            {
+                                # from_name and to_name come from the Label Studio "Labeling Interface" names; it is critical they match the Label Studio values
+                                "from_name": "label",
+                                "to_name": "image",
+                                "type": "rectanglelabels",  # should match the "to" type in the "Labeling Interface"
+                                "value": {
+                                    "rectanglelabels": [
+                                        result["name"]
+                                    ],  # Currently copying from the result name value but this can be anything
+                                    # Label Studio requires bounding box dimensions to be expressed as percentages of the image
+                                    "x": result["xmin"] / width * 100.0,
+                                    "y": result["ymin"] / height * 100.0,
+                                    "width": (result["xmax"] - result["xmin"])
+                                    / width
+                                    * 100.0,
+                                    "height": (result["ymax"] - result["ymin"])
+                                    / height
+                                    * 100.0,
+                                },
+                                "score": result["confidence"],
+                            }
+                        )
 
-            # Iterate through the results returned by the model and format each one for Label Studio
-            results = []
-            for result in model_results.pandas().xyxy[0].to_dict(orient='records'):
-                if result['confidence'] > CONFIDENCE_THRESHOLD:
-                    results.append({
-                        # from_name and to_name come from the Label Studio "Labeling Interface" names; it is critical they match the Label Studio values
-                        'from_name': 'label',
-                        'to_name': 'image',
-                        'type': 'rectanglelabels', # should match the "to" type in the "Labeling Interface"
-                        'value': {
-                            'rectanglelabels': [result['name']], # Currently copying from the result name value but this can be anything
-                            # Label Studio requires bounding box dimensions to be expressed as percentages of the image
-                            'x': result['xmin'] / width * 100.0,
-                            'y': result['ymin'] / height * 100.0,
-                            'width': (result['xmax'] - result['xmin']) / width * 100.0,
-                            'height': (result['ymax'] - result['ymin']) / height * 100.0,
-                        },
-                        'score': result['confidence']
-                    })
+                predictions.append(
+                    {"result": results, "model_version": self.model_name}
+                )
+            finally:
+                # Delete the image
+                Path(image).unlink(missing_ok=True)
 
-            return [{'result': results, 'model_version': 'tree-yolov5s-oct1623'}]
-        finally:
-            # Delete the image
-            Path.unlink(image, missing_ok=True)
+        return predictions
 
     def fit(self, event, data, **kwargs):
         """
