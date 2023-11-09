@@ -43,7 +43,6 @@ def create_predictions(base_url, access_token, project_id, view_id):
     session.mount("https://", HTTPAdapter(max_retries=retries))
 
     # Setup parameters
-    page = 1
     page_size = 50
 
     params = {"page_size": 1, "project": project_id}
