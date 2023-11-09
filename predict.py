@@ -7,7 +7,7 @@ from progress.bar import Bar
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from model import TreeYolov5Model
+from model import Yolov5Model
 
 
 def create_predictions(base_url, access_token, project_id, view_id):
@@ -18,13 +18,13 @@ def create_predictions(base_url, access_token, project_id, view_id):
     tasks that don't already have predictions, or perhaps only outdated predictions (not currently supported in the code). This allows us to
     avoid iterating through tens of thousands of tasks that we don't need to process.
 
-    :param base_url: base Label Studio url (https://hostlabeling.popsmodel.org)
+    :param base_url: base Label Studio url (https://example.com)
     :param access_token: Label Studio access token, this can be found in "Account & Settings" in Label Studio under your login
-    :param project_id: in the url in Label Studio: https://hostlabeling.popsmodel.org/projects/{project_id}/data?tab={view_id}
-    :param view_id: in the url in Label Studio: https://hostlabeling.popsmodel.org/projects/{project_id}/data?tab={view_id} (optional but recommended)
+    :param project_id: in the Label Studio url: https://example.com/projects/{project_id}/data?tab={view_id}
+    :param view_id: in the Label Studio url: https://example.com/projects/{project_id}/data?tab={view_id} (optional but recommended)
     """
     logging.info("Initializing")
-    model = TreeYolov5Model(project_id)
+    model = Yolov5Model(project_id)
 
     # Set urls
     tasks_url = f"{base_url}/api/tasks"

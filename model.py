@@ -8,11 +8,11 @@ import botocore
 import torch
 from label_studio_ml.model import LabelStudioMLBase
 
-# Matches the spaces filepath format given by Label Studio
+# Matches the S3 filepath format given by Label Studio
 FILEPATH_REGEX = re.compile(r"^s3://([^/]+)/(.+)$")
 
 
-class TreeYolov5Model(LabelStudioMLBase):
+class Yolov5Model(LabelStudioMLBase):
     """
     A wrapper around PyTorch/YOLOv5 to allow Label Studio interoperability.
 
@@ -26,13 +26,13 @@ class TreeYolov5Model(LabelStudioMLBase):
         """
         Initialize the model and the cloud storage client
         """
-        super(TreeYolov5Model, self).__init__(project_id, **kwargs)
+        super(Yolov5Model, self).__init__(project_id, **kwargs)
 
         # Fail fast if these aren't set
-        domain = os.environ["SPACES_DOMAIN"]
-        region = os.environ["SPACES_REGION"]
-        key = os.environ["SPACES_KEY"]
-        secret = os.environ["SPACES_SECRET"]
+        domain = os.environ["CLOUD_STORAGE_DOMAIN"]
+        region = os.environ["CLOUD_STORAGE_REGION"]
+        key = os.environ["CLOUD_STORAGE_KEY"]
+        secret = os.environ["CLOUD_STORAGE_SECRET"]
         model_path = os.environ["MODEL_PATH"]
 
         self.confidence_threshold = float(os.getenv("CONFIDENCE_THRESHOLD", 0.0))
@@ -40,7 +40,7 @@ class TreeYolov5Model(LabelStudioMLBase):
 
         self.model = torch.hub.load(yolov5_path, "custom", model_path, source="local")
         self.model_name = Path(model_path).stem
-        self.bucket = os.getenv("SPACES_BUCKET")
+        self.bucket = os.getenv("CLOUD_STORAGE_BUCKET")
 
         session = boto3.session.Session()
         self.client = session.client(
@@ -70,8 +70,8 @@ class TreeYolov5Model(LabelStudioMLBase):
                 bucket = self.bucket
                 filename = task["storage_filename"]
             else:
-                spaces_path = task["data"]["image"]
-                (bucket, filename) = FILEPATH_REGEX.match(spaces_path).groups()
+                cloud_storage_path = task["data"]["image"]
+                (bucket, filename) = FILEPATH_REGEX.match(cloud_storage_path).groups()
             image = f"/tmp/image"
 
             try:
