@@ -66,3 +66,15 @@ The predict script can be used to create predictions for Label Studio tasks usin
     ```bash
     python predict.py
     ```
+
+    Options:
+
+    Dry run (doesn't create predictions in Label Studio but performs all other processing).
+    ```bash
+    python predict.py --dry-run
+    ```
+
+    Specify env file:
+    ```bash
+    python predict.py --env-file ENV_FILE
+    ```

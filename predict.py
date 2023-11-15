@@ -1,5 +1,6 @@
-import os
+import argparse
 import logging
+import os
 
 import requests
 from dotenv import load_dotenv
@@ -10,7 +11,7 @@ from urllib3.util import Retry
 from model import Yolov5Model
 
 
-def create_predictions(base_url, access_token, project_id, view_id):
+def create_predictions(base_url, access_token, project_id, view_id, dry_run=False):
     """
     Create predictions for a project (and optionally view/tab) in Label Studio.
 
@@ -97,22 +98,23 @@ def create_predictions(base_url, access_token, project_id, view_id):
                             continue
 
                         # Create the prediction in Label Studio
-                        logging.info(f"Creating prediction for task {task_id}")
-                        logging.debug(prediction)
-                        try:
-                            resp = session.post(
-                                predict_url,
-                                json=(
-                                    prediction
-                                    | {"task": task_id, "project": project_id}
-                                ),
-                                timeout=10,
-                            )
-                            resp.raise_for_status()
-                        except requests.exceptions.HTTPError:
-                            logging.exception(
-                                f"Error creating prediction for task {task_id}"
-                            )
+                        if not dry_run:
+                            logging.info(f"Creating prediction for task {task_id}")
+                            logging.debug(prediction)
+                            try:
+                                resp = session.post(
+                                    predict_url,
+                                    json=(
+                                        prediction
+                                        | {"task": task_id, "project": project_id}
+                                    ),
+                                    timeout=10,
+                                )
+                                resp.raise_for_status()
+                            except requests.exceptions.HTTPError:
+                                logging.exception(
+                                    f"Error creating prediction for task {task_id}"
+                                )
                     else:
                         logging.info(f"Skipping task {task_id}, existing prediction(s)")
 
@@ -124,8 +126,18 @@ def create_predictions(base_url, access_token, project_id, view_id):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dry-run",
+        default=False,
+        action="store_true",
+        help="don't actually create predictions in Label Studio",
+    )
+    parser.add_argument("--env-file", type=str, default=".env", help="env file to load")
+    args = parser.parse_known_args()[0]
+
     # Load environment variables from a file, .env by default
-    load_dotenv()
+    load_dotenv(args.env_file)
     logging.basicConfig(
         format="[%(asctime)s] [%(levelname)s] [%(name)s::%(funcName)s::%(lineno)d] %(message)s",
         level=os.getenv("LOG_LEVEL"),
@@ -138,4 +150,19 @@ if __name__ == "__main__":
     access_token = os.environ["LABEL_STUDIO_ACCESS_TOKEN"]
     view_id = os.getenv("VIEW_ID")
 
-    create_predictions(base_url, access_token, project_id, view_id)
+    print("Running predict.py with the following configuration:\n")
+    print("Dry run:", args.dry_run)
+    print("Env file:", args.env_file)
+    print("\nEnv file contents:\n")
+    with open(args.env_file) as f:
+        print(f.read())
+
+    answer = input("Continue? (y/N): ")
+    if answer.lower() in ["y", "yes"]:
+        print("Running...")
+        create_predictions(
+            base_url, access_token, project_id, view_id, dry_run=args.dry_run
+        )
+        print("Done.")
+    else:
+        print("Aborted.")

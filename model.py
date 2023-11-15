@@ -1,5 +1,6 @@
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -64,20 +65,21 @@ class Yolov5Model(LabelStudioMLBase):
         :return predictions: [Predictions array in JSON format](https://labelstud.io/guide/export.html#Raw-JSON-format-of-completed-tasks)
         """
         predictions = []
-        for task in tasks:
-            # Prepare to download the image
-            if task["storage_filename"]:
-                bucket = self.bucket
-                filename = task["storage_filename"]
-            else:
-                cloud_storage_path = task["data"]["image"]
-                (bucket, filename) = FILEPATH_REGEX.match(cloud_storage_path).groups()
-            image = f"/tmp/image"
+        with tempfile.NamedTemporaryFile() as fp:
+            for task in tasks:
+                # Prepare to download the image
+                if task["storage_filename"]:
+                    bucket = self.bucket
+                    filename = task["storage_filename"]
+                else:
+                    cloud_storage_path = task["data"]["image"]
+                    (bucket, filename) = FILEPATH_REGEX.match(
+                        cloud_storage_path
+                    ).groups()
 
-            try:
                 # Download the image and run the model on it
-                self.client.download_file(bucket, filename, image)
-                model_results = self.model(image)
+                self.client.download_fileobj(bucket, filename, fp)
+                model_results = self.model(fp.name)
 
                 # Get image dimensions from the tensor; this is needed for the bounding box conversions below
                 height = model_results.ims[0].shape[0]
@@ -114,9 +116,6 @@ class Yolov5Model(LabelStudioMLBase):
                 predictions.append(
                     {"result": results, "model_version": self.model_name}
                 )
-            finally:
-                # Delete the image
-                Path(image).unlink(missing_ok=True)
 
         return predictions
 
